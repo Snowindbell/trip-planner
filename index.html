@@ -236,10 +236,11 @@
     <script type="module">
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, doc, addDoc, setDoc, deleteDoc, serverTimestamp, query, orderBy, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, setDoc, deleteDoc, serverTimestamp, query, orderBy, writeBatch, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
         // --- CONFIGURATION ---
+        // This is now automatically injected by the environment. No need to touch it.
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyATWsYpGbY9IGjlaL8Xhb7hK_1nsVgjCCg",
             authDomain: "trip-planner-a3c75.firebaseapp.com",
@@ -249,13 +250,8 @@
             appId: "1:601697285972:web:77cc7387e8e9ef32663ac1",
             measurementId: "G-QHN14EQGZN"
         };
-        const appId = typeof __app_id !== 'undefined' ? __app_id : '1:601697285972:web:77cc7387e8e9ef32663ac1';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-engineer-planner';
         
-        // --- PERMISSION CONTROL ---
-        // !!! IMPORTANT: Replace with your actual Firebase User ID to get admin access.
-        // 您可以在登入後，於左上角的 "您的使用者ID:" 找到這個值。
-        const ADMIN_UIDS = ["ak9CSEc9njgV0HdqWEJNU3cq0MA3"]; 
-
         const ENGINEERS = ["Ryan", "Jess", "Jesper", "Vito", "Eric", "其他工程師"];
         const TRANSPORTATION_OPTIONS = ["自行開車", "捷運", "高鐵", "計程車", "飛機", "船", "其他大眾工具"];
         const OVERALL_STATUS_OPTIONS = ["計畫中", "進行中", "已完成", "延期", "取消"];
@@ -326,22 +322,38 @@
         }
 
         // --- AUTHENTICATION & PERMISSIONS ---
-        onAuthStateChanged(auth, user => {
+        onAuthStateChanged(auth, async (user) => {
             if (user) {
-                // User is signed in (either with Google or anonymously).
                 currentUserId = user.uid;
                 userIdSpan.textContent = user.uid;
                 updateAuthUI(user);
-                updateAdminView(user.uid);
+                await checkAdminStatus(user.uid);
                 listenForPlans();
             } else {
-                // No user is signed in. This case should ideally not happen with the new logic.
-                // But as a fallback, we sign them in anonymously.
                 signInAnonymously(auth).catch(error => {
                     console.error("Fallback anonymous sign-in failed:", error);
                 });
             }
         });
+
+        async function checkAdminStatus(uid) {
+            if (!uid) {
+                document.body.classList.remove('admin-view');
+                return;
+            }
+            try {
+                const adminDocRef = doc(db, "private", "admins");
+                const adminDoc = await getDoc(adminDocRef);
+                if (adminDoc.exists() && adminDoc.data().uids.includes(uid)) {
+                    document.body.classList.add('admin-view');
+                } else {
+                    document.body.classList.remove('admin-view');
+                }
+            } catch (error) {
+                console.error("Error checking admin status:", error);
+                document.body.classList.remove('admin-view');
+            }
+        }
 
         function updateAuthUI(user) {
             if (user && !user.isAnonymous) {
@@ -376,18 +388,9 @@
         async function signOutUser() {
             try {
                 await signOut(auth);
-                // The onAuthStateChanged listener will automatically handle signing in anonymously.
                 document.body.classList.remove('admin-view');
             } catch (error) {
                 console.error("Sign out failed:", error);
-            }
-        }
-
-        function updateAdminView(uid) {
-            if (ADMIN_UIDS.includes(uid)) {
-                document.body.classList.add('admin-view');
-            } else {
-                document.body.classList.remove('admin-view');
             }
         }
 
@@ -442,18 +445,26 @@
             
             planData.totalCost = calculateTotalCost(planData);
 
+            if (planId) {
+                const index = allPlans.findIndex(p => p.id === planId);
+                if (index !== -1) {
+                    allPlans[index] = { ...allPlans[index], ...planData };
+                }
+                applyFiltersAndRender();
+            }
+
             try {
                 if (planId) {
                     const planRef = doc(db, `artifacts/${appId}/public/data/travel_plans`, planId);
                     await setDoc(planRef, planData, { merge: true });
                 } else {
-                    planData.createdAt = serverTimestamp();
                     await addDoc(plansCollectionRef, planData);
                 }
                 closeModal();
             } catch (error) {
                 console.error("Error saving plan: ", error);
                 alert("儲存失敗，請檢查網路連線或稍後再試。");
+                listenForPlans();
             }
         }
 
@@ -474,7 +485,6 @@
 
             if (!confirm(`您確定要將 ${idsToUpdate.length} 筆計畫標示為已報銷嗎？`)) return;
 
-            // Manually update local state for immediate UI feedback
             allPlans = allPlans.map(plan => {
                 if (idsToUpdate.includes(plan.id)) {
                     return { ...plan, reimbursed: true };
@@ -485,7 +495,6 @@
             selectAllCheckbox.checked = false;
             applyFiltersAndRender();
 
-            // Then, perform the database update in the background
             const batch = writeBatch(db);
             idsToUpdate.forEach(id => {
                 const planRef = doc(db, `artifacts/${appId}/public/data/travel_plans`, id);
