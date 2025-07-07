@@ -50,6 +50,13 @@
             font-size: 0.75rem;
             font-weight: 500;
         }
+        /* --- Permission Control --- */
+        .admin-only {
+            display: none !important;
+        }
+        .admin-view .admin-only {
+            display: revert !important;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -62,7 +69,7 @@
                 <p class="text-gray-400 mt-1">即時同步所有工程師的出差計畫與進度。</p>
                  <p class="text-xs text-gray-500 mt-2">您的使用者ID: <span id="userId" class="font-mono"></span></p>
             </div>
-            <button id="addPlanBtn" class="mt-4 md:mt-0 w-full md:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105">
+            <button id="addPlanBtn" class="admin-only mt-4 md:mt-0 w-full md:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105">
                 <i data-lucide="plus-circle"></i>
                 <span>新增出差計畫</span>
             </button>
@@ -119,7 +126,7 @@
                     <table class="w-full text-left">
                         <thead class="text-gray-400">
                             <tr>
-                                <th class="p-3"><input type="checkbox" id="selectAllCheckbox" class="h-4 w-4 rounded bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500"></th>
+                                <th class="p-3 admin-only"><input type="checkbox" id="selectAllCheckbox" class="h-4 w-4 rounded bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500"></th>
                                 <th class="p-3">報銷狀態</th>
                                 <th class="p-3">整體狀態</th>
                                 <th class="p-3">工程師</th>
@@ -127,13 +134,13 @@
                                 <th class="p-3">地點與目的</th>
                                 <th class="p-3 min-w-[250px]">交通與費用</th>
                                 <th class="p-3">總計金額</th>
-                                <th class="p-3">操作</th>
+                                <th class="p-3 admin-only">操作</th>
                             </tr>
                         </thead>
                         <tbody id="plan-table-body" class="divide-y divide-gray-700"></tbody>
                     </table>
                 </div>
-                <div id="reimbursement-actions" class="hidden mt-4 p-4 bg-gray-900 rounded-lg flex justify-between items-center">
+                <div id="reimbursement-actions" class="admin-only hidden mt-4 p-4 bg-gray-900 rounded-lg flex justify-between items-center">
                     <p id="reimbursement-summary" class="text-white"></p>
                     <button id="confirmReimbursementBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">確認報銷</button>
                 </div>
@@ -142,8 +149,8 @@
     </div>
 
     <!-- Modal for Add/Edit Plan -->
-    <div id="planModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop overflow-y-auto">
-        <div class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl m-4 transform transition-all">
+    <div id="planModal" class="fixed inset-0 z-50 p-4 md:p-8 flex justify-center hidden modal-backdrop overflow-y-auto">
+        <div class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl transform transition-all">
             <form id="planForm" class="p-8">
                 <h2 id="modalTitle" class="text-2xl font-bold mb-6">新增出差計畫</h2>
                 <input type="hidden" id="planId">
@@ -231,9 +238,22 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
         // --- CONFIGURATION ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", projectId: "YOUR_PROJECT_ID" };
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyATWsYpGbY9IGjlaL8Xhb7hK_1nsVgjCCg",
+            authDomain: "trip-planner-a3c75.firebaseapp.com",
+            projectId: "trip-planner-a3c75",
+            storageBucket: "trip-planner-a3c75.firebasestorage.app",
+            messagingSenderId: "601697285972",
+            appId: "1:601697285972:web:77cc7387e8e9ef32663ac1",
+            measurementId: "G-QHN14EQGZN"
+        };
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-engineer-planner';
         
+        // --- PERMISSION CONTROL ---
+        // !!! IMPORTANT: Replace with your actual Firebase User ID to get admin access.
+        // 您可以在登入後，於左上角的 "您的使用者ID:" 找到這個值。
+        const ADMIN_UIDS = ["16170745704132918679"]; 
+
         const ENGINEERS = ["Ryan", "Jess", "Jesper", "Vito", "Eric", "其他工程師"];
         const TRANSPORTATION_OPTIONS = ["自行開車", "捷運", "高鐵", "計程車", "飛機", "船", "其他大眾工具"];
         const OVERALL_STATUS_OPTIONS = ["計畫中", "進行中", "已完成", "延期", "取消"];
@@ -302,14 +322,23 @@
             selectAllCheckbox.addEventListener('change', handleSelectAll);
         }
 
-        // --- AUTHENTICATION ---
+        // --- AUTHENTICATION & PERMISSIONS ---
         onAuthStateChanged(auth, user => {
             if (user) {
                 currentUserId = user.uid;
                 userIdSpan.textContent = user.uid;
+                updateAdminView(user.uid);
                 listenForPlans();
             }
         });
+
+        function updateAdminView(uid) {
+            if (ADMIN_UIDS.includes(uid)) {
+                document.body.classList.add('admin-view');
+            } else {
+                document.body.classList.remove('admin-view');
+            }
+        }
 
         async function signIn() {
             try {
@@ -325,10 +354,9 @@
 
         // --- DATA HANDLING & SYNC ---
         function listenForPlans() {
-            if (unsubscribe) unsubscribe(); // Detach previous listener if it exists
+            if (unsubscribe) unsubscribe(); 
             const q = query(plansCollectionRef, orderBy('startDate', 'asc'));
             unsubscribe = onSnapshot(q, (snapshot) => {
-                // Ignore updates from local cache during a write to prevent race conditions
                 if (snapshot.metadata.hasPendingWrites) {
                     return;
                 }
@@ -416,7 +444,7 @@
             });
             selectedForReimbursement = {};
             selectAllCheckbox.checked = false;
-            applyFiltersAndRender(); // Re-render with updated local data immediately
+            applyFiltersAndRender();
 
             // Then, perform the database update in the background
             const batch = writeBatch(db);
@@ -430,7 +458,6 @@
             } catch (error) {
                 console.error("Error confirming reimbursement: ", error);
                 alert("報銷失敗，資料庫可能未更新，請重新整理頁面。");
-                // Optionally, re-fetch data to correct UI in case of failure
                 listenForPlans();
             }
         }
@@ -470,7 +497,7 @@
             }
             tableBody.innerHTML = plans.map(plan => `
                 <tr class="hover:bg-gray-700/50">
-                    <td class="p-3">
+                    <td class="p-3 admin-only">
                         <input type="checkbox" class="reimbursement-checkbox h-4 w-4 rounded bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500" 
                                data-id="${plan.id}" data-cost="${plan.totalCost || 0}" 
                                ${plan.reimbursed ? 'disabled' : ''}
@@ -499,7 +526,7 @@
                         </ul>
                     </td>
                     <td class="p-3 font-semibold text-white">${plan.totalCost ? plan.totalCost.toLocaleString() : 0}</td>
-                    <td class="p-3">
+                    <td class="p-3 admin-only">
                         <div class="flex gap-2">
                             <button class="edit-btn p-2 text-gray-400 hover:text-white" data-id="${plan.id}"><i data-lucide="edit"></i></button>
                             <button class="delete-btn p-2 text-gray-400 hover:text-red-500" data-id="${plan.id}"><i data-lucide="trash-2"></i></button>
