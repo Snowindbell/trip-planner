@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工程團隊出差與施工計畫看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #111827; /* Dark background */
+            color: #f3f4f6;
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+        .status-計畫中 { background-color: #3b82f6; color: white; }
+        .status-進行中 { background-color: #f59e0b; color: white; }
+        .status-已完成 { background-color: #22c55e; color: white; }
+        .status-延期 { background-color: #a855f7; color: white; }
+        .status-取消 { background-color: #ef4444; color: white; }
+        .reimbursement-未報銷 { background-color: #f43f5e; color: white; }
+        .reimbursement-已報銷 { background-color: #4b5563; color: white; }
+        .timeline-grid {
+            display: grid;
+            grid-template-columns: 120px repeat(31, minmax(0, 1fr)); /* Name + 31 days */
+            gap: 2px;
+        }
+        .timeline-bar {
+            grid-column-start: var(--start-day);
+            grid-column-end: var(--end-day);
+        }
+        .fee-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8">
+            <div class="text-center md:text-left">
+                <h1 class="text-3xl font-bold text-white">工程團隊出差與施工計畫看板</h1>
+                <p class="text-gray-400 mt-1">即時同步所有工程師的出差計畫與進度。</p>
+                 <p class="text-xs text-gray-500 mt-2">您的使用者ID: <span id="userId" class="font-mono"></span></p>
+            </div>
+            <button id="addPlanBtn" class="mt-4 md:mt-0 w-full md:w-auto flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                <i data-lucide="plus-circle"></i>
+                <span>新增出差計畫</span>
+            </button>
+        </div>
+
+        <!-- Summaries -->
+        <div class="space-y-6">
+            <!-- Summary 1: At-a-Glance -->
+            <div class="bg-gray-800 p-6 rounded-xl shadow-md">
+                <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="zap"></i> 當前與近期出差摘要</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="text-lg font-semibold text-amber-400 mb-3">進行中</h3>
+                        <div id="currentlyOnSite" class="space-y-2">
+                            <p class="text-gray-400">目前無人出差。</p>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-sky-400 mb-3">未來7天預計出差</h3>
+                        <div id="upcomingThisWeek" class="space-y-2">
+                            <p class="text-gray-400">未來一週無出差計畫。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary 2: Master Schedule -->
+            <div class="bg-gray-800 p-6 rounded-xl shadow-md">
+                <div class="flex justify-between items-center mb-4">
+                     <h2 class="text-xl font-bold text-white flex items-center gap-2"><i data-lucide="calendar-days"></i> 全員時程總覽</h2>
+                    <div id="month-navigation" class="flex items-center gap-2">
+                        <button id="prev-month" class="p-2 rounded-md hover:bg-gray-700"><i data-lucide="chevron-left"></i></button>
+                        <span id="current-month-display" class="text-lg font-semibold w-32 text-center"></span>
+                        <button id="next-month" class="p-2 rounded-md hover:bg-gray-700"><i data-lucide="chevron-right"></i></button>
+                    </div>
+                </div>
+                <div id="timeline-container" class="overflow-x-auto"></div>
+            </div>
+
+            <!-- Summary 3: Detailed Log -->
+            <div class="bg-gray-800 p-6 rounded-xl shadow-md">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2"><i data-lucide="list-checks"></i> 所有出差計畫列表</h2>
+                    <div class="flex gap-2 mt-4 md:mt-0">
+                        <select id="engineerFilter" class="bg-gray-700 border-gray-600 text-white rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500"></select>
+                        <select id="reimbursementFilter" class="bg-gray-700 border-gray-600 text-white rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="all">所有報銷狀態</option>
+                            <option value="unreimbursed">未報銷</option>
+                            <option value="reimbursed">已報銷</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="text-gray-400">
+                            <tr>
+                                <th class="p-3"><input type="checkbox" id="selectAllCheckbox" class="h-4 w-4 rounded bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500"></th>
+                                <th class="p-3">報銷狀態</th>
+                                <th class="p-3">整體狀態</th>
+                                <th class="p-3">工程師</th>
+                                <th class="p-3">預計出差日期</th>
+                                <th class="p-3">地點與目的</th>
+                                <th class="p-3 min-w-[250px]">交通與費用</th>
+                                <th class="p-3">總計金額</th>
+                                <th class="p-3">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="plan-table-body" class="divide-y divide-gray-700"></tbody>
+                    </table>
+                </div>
+                <div id="reimbursement-actions" class="hidden mt-4 p-4 bg-gray-900 rounded-lg flex justify-between items-center">
+                    <p id="reimbursement-summary" class="text-white"></p>
+                    <button id="confirmReimbursementBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">確認報銷</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Add/Edit Plan -->
+    <div id="planModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop overflow-y-auto">
+        <div class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl m-4 transform transition-all">
+            <form id="planForm" class="p-8">
+                <h2 id="modalTitle" class="text-2xl font-bold mb-6">新增出差計畫</h2>
+                <input type="hidden" id="planId">
+                <div class="space-y-6">
+                    <div>
+                        <label for="engineerName" class="block text-sm font-medium text-gray-300 mb-1">工程師姓名</label>
+                        <select id="engineerName" required class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500"></select>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="startDate" class="block text-sm font-medium text-gray-300 mb-1">預計開始日期</label>
+                            <input type="date" id="startDate" required class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label for="endDate" class="block text-sm font-medium text-gray-300 mb-1">預計結束日期</label>
+                            <input type="date" id="endDate" required class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="origin" class="block text-sm font-medium text-gray-300 mb-1">起點</label>
+                            <input type="text" id="origin" required placeholder="例如：公司" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label for="destination" class="block text-sm font-medium text-gray-300 mb-1">目的</label>
+                            <input type="text" id="destination" required placeholder="例如：台中科學園區" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                    </div>
+                     <div>
+                        <label for="tripPurpose" class="block text-sm font-medium text-gray-300 mb-1">出差目的</label>
+                        <textarea id="tripPurpose" rows="2" placeholder="例如：客戶拜訪、設備維護" class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                    </div>
+                    
+                    <!-- Fees Section -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">費用申請</label>
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-6">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" id="accommodationFee" class="h-4 w-4 rounded bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500">
+                                    <span>住宿費</span>
+                                </label>
+                                <div id="accommodationCostWrapper" class="hidden">
+                                    <input type="number" id="accommodationCost" placeholder="住宿金額" class="w-full bg-gray-600 border-gray-500 text-gray-300 rounded-md p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-6">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" id="mealFee" class="h-4 w-4 rounded bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500">
+                                    <span>膳雜費</span>
+                                </label>
+                                <div id="mealFeeCalculationWrapper" class="hidden text-sm text-gray-400"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Transportation Section -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">交通方式</label>
+                        <div id="transportation-container" class="space-y-3"></div>
+                        <button type="button" id="addTransportationBtn" class="mt-3 flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300">
+                            <i data-lucide="plus"></i>
+                            <span>新增交通方式</span>
+                        </button>
+                    </div>
+
+                     <!-- Overall Status Section -->
+                    <div id="overall-status-wrapper" class="hidden">
+                        <label for="overallStatus" class="block text-sm font-medium text-gray-300 mb-1">整體狀態</label>
+                        <select id="overallStatus" required class="w-full bg-gray-700 border-gray-600 text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500"></select>
+                    </div>
+                </div>
+                <div class="mt-8 flex justify-end gap-3">
+                    <button type="button" id="cancelBtn" class="py-2 px-5 bg-gray-600 hover:bg-gray-500 text-white rounded-lg">取消</button>
+                    <button type="submit" class="py-2 px-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">儲存計畫</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, setDoc, deleteDoc, serverTimestamp, query, orderBy, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
+        // --- CONFIGURATION ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", projectId: "YOUR_PROJECT_ID" };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-engineer-planner';
+        
+        const ENGINEERS = ["Ryan", "Jess", "Jesper", "Vito", "Eric", "其他工程師"];
+        const TRANSPORTATION_OPTIONS = ["自行開車", "捷運", "高鐵", "計程車", "飛機", "船", "其他大眾工具"];
+        const OVERALL_STATUS_OPTIONS = ["計畫中", "進行中", "已完成", "延期", "取消"];
+        const STATUS_COLORS = { "計畫中": "bg-blue-500", "進行中": "bg-yellow-500", "已完成": "bg-green-500", "延期": "bg-purple-500", "取消": "bg-red-500" };
+        const MILEAGE_RATE = 6;
+        const MEAL_ALLOWANCE_PER_DAY = 600;
+
+        // --- GLOBAL STATE ---
+        let allPlans = [];
+        let selectedForReimbursement = {};
+        let currentUserId = null;
+        let currentDate = new Date();
+        let unsubscribe; // To hold the listener function
+
+        // --- FIREBASE INITIALIZATION ---
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const plansCollectionRef = collection(db, `artifacts/${appId}/public/data/travel_plans`);
+
+        // --- DOM ELEMENTS ---
+        const addPlanBtn = document.getElementById('addPlanBtn');
+        const planModal = document.getElementById('planModal');
+        const planForm = document.getElementById('planForm');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const modalTitle = document.getElementById('modalTitle');
+        const planIdInput = document.getElementById('planId');
+        const engineerNameSelect = document.getElementById('engineerName');
+        const userIdSpan = document.getElementById('userId');
+        const transportationContainer = document.getElementById('transportation-container');
+        const addTransportationBtn = document.getElementById('addTransportationBtn');
+        const overallStatusWrapper = document.getElementById('overall-status-wrapper');
+        const overallStatusSelect = document.getElementById('overallStatus');
+        const accommodationFeeCheckbox = document.getElementById('accommodationFee');
+        const accommodationCostWrapper = document.getElementById('accommodationCostWrapper');
+        const mealFeeCheckbox = document.getElementById('mealFee');
+        const mealFeeCalculationWrapper = document.getElementById('mealFeeCalculationWrapper');
+        const startDateInput = document.getElementById('startDate');
+        const endDateInput = document.getElementById('endDate');
+        const engineerFilter = document.getElementById('engineerFilter');
+        const reimbursementFilter = document.getElementById('reimbursementFilter');
+        const reimbursementActions = document.getElementById('reimbursement-actions');
+        const reimbursementSummary = document.getElementById('reimbursement-summary');
+        const confirmReimbursementBtn = document.getElementById('confirmReimbursementBtn');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+
+        // --- INITIAL SETUP ---
+        function setup() {
+            lucide.createIcons();
+            populateSelects();
+            addPlanBtn.addEventListener('click', openAddModal);
+            cancelBtn.addEventListener('click', closeModal);
+            planForm.addEventListener('submit', handleFormSubmit);
+            addTransportationBtn.addEventListener('click', () => addTransportationItem());
+            document.getElementById('prev-month').addEventListener('click', () => changeMonth(-1));
+            document.getElementById('next-month').addEventListener('click', () => changeMonth(1));
+            
+            accommodationFeeCheckbox.addEventListener('change', toggleAccommodationCost);
+            mealFeeCheckbox.addEventListener('change', updateMealAllowanceDisplay);
+            startDateInput.addEventListener('change', updateMealAllowanceDisplay);
+            endDateInput.addEventListener('change', updateMealAllowanceDisplay);
+
+            engineerFilter.addEventListener('change', applyFiltersAndRender);
+            reimbursementFilter.addEventListener('change', applyFiltersAndRender);
+            confirmReimbursementBtn.addEventListener('click', handleConfirmReimbursement);
+            selectAllCheckbox.addEventListener('change', handleSelectAll);
+        }
+
+        // --- AUTHENTICATION ---
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                currentUserId = user.uid;
+                userIdSpan.textContent = user.uid;
+                listenForPlans();
+            }
+        });
+
+        async function signIn() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Authentication failed:", error);
+            }
+        }
+
+        // --- DATA HANDLING & SYNC ---
+        function listenForPlans() {
+            if (unsubscribe) unsubscribe(); // Detach previous listener if it exists
+            const q = query(plansCollectionRef, orderBy('startDate', 'asc'));
+            unsubscribe = onSnapshot(q, (snapshot) => {
+                // Ignore updates from local cache during a write to prevent race conditions
+                if (snapshot.metadata.hasPendingWrites) {
+                    return;
+                }
+                allPlans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                applyFiltersAndRender();
+            }, (error) => console.error("Error fetching plans: ", error));
+        }
+
+        setInterval(() => {
+            if (allPlans.length > 0) {
+                applyFiltersAndRender();
+            }
+        }, 60000);
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const planId = planIdInput.value;
+            
+            const transportNodes = transportationContainer.querySelectorAll('.transportation-item');
+            const transportation = Array.from(transportNodes).map(node => {
+                const method = node.querySelector('select[name="transportationMethod"]').value;
+                if (method === '自行開車') {
+                    const mileage = parseFloat(node.querySelector('input[name="transportationMileage"]').value) || 0;
+                    return { method, mileage, cost: mileage * MILEAGE_RATE };
+                } else {
+                    return { method, mileage: 0, cost: parseFloat(node.querySelector('input[name="transportationCost"]').value) || 0 };
+                }
+            }).filter(t => t.method);
+
+            const planData = {
+                engineerName: document.getElementById('engineerName').value,
+                startDate: startDateInput.value,
+                endDate: endDateInput.value,
+                origin: document.getElementById('origin').value,
+                destination: document.getElementById('destination').value,
+                tripPurpose: document.getElementById('tripPurpose').value,
+                accommodationFee: accommodationFeeCheckbox.checked,
+                accommodationCost: accommodationFeeCheckbox.checked ? (parseFloat(document.getElementById('accommodationCost').value) || 0) : 0,
+                mealFee: mealFeeCheckbox.checked,
+                transportation: transportation,
+                overallStatus: planId ? overallStatusSelect.value : '計畫中',
+                reimbursed: planId ? allPlans.find(p => p.id === planId).reimbursed : false, 
+            };
+            
+            planData.totalCost = calculateTotalCost(planData);
+
+            try {
+                if (planId) {
+                    const planRef = doc(db, `artifacts/${appId}/public/data/travel_plans`, planId);
+                    await setDoc(planRef, planData, { merge: true });
+                } else {
+                    planData.createdAt = serverTimestamp();
+                    await addDoc(plansCollectionRef, planData);
+                }
+                closeModal();
+            } catch (error) {
+                console.error("Error saving plan: ", error);
+                alert("儲存失敗，請檢查網路連線或稍後再試。");
+            }
+        }
+
+        async function deletePlan(id) {
+            if (confirm("您確定要刪除這個計畫嗎？")) {
+                try {
+                    await deleteDoc(doc(db, `artifacts/${appId}/public/data/travel_plans`, id));
+                } catch (error) {
+                    console.error("Error deleting plan: ", error);
+                    alert("刪除失敗，請稍後再試。");
+                }
+            }
+        }
+        
+        async function handleConfirmReimbursement() {
+            const idsToUpdate = Object.keys(selectedForReimbursement);
+            if (idsToUpdate.length === 0) return;
+
+            if (!confirm(`您確定要將 ${idsToUpdate.length} 筆計畫標示為已報銷嗎？`)) return;
+
+            // Manually update local state for immediate UI feedback
+            allPlans = allPlans.map(plan => {
+                if (idsToUpdate.includes(plan.id)) {
+                    return { ...plan, reimbursed: true };
+                }
+                return plan;
+            });
+            selectedForReimbursement = {};
+            selectAllCheckbox.checked = false;
+            applyFiltersAndRender(); // Re-render with updated local data immediately
+
+            // Then, perform the database update in the background
+            const batch = writeBatch(db);
+            idsToUpdate.forEach(id => {
+                const planRef = doc(db, `artifacts/${appId}/public/data/travel_plans`, id);
+                batch.update(planRef, { reimbursed: true });
+            });
+
+            try {
+                await batch.commit();
+            } catch (error) {
+                console.error("Error confirming reimbursement: ", error);
+                alert("報銷失敗，資料庫可能未更新，請重新整理頁面。");
+                // Optionally, re-fetch data to correct UI in case of failure
+                listenForPlans();
+            }
+        }
+
+        // --- UI RENDERING ---
+        function applyFiltersAndRender() {
+            const engineer = engineerFilter.value;
+            const reimbursement = reimbursementFilter.value;
+
+            let filteredPlans = allPlans;
+
+            if (engineer !== 'all') {
+                filteredPlans = filteredPlans.filter(p => p.engineerName === engineer);
+            }
+
+            if (reimbursement !== 'all') {
+                const isReimbursed = reimbursement === 'reimbursed';
+                filteredPlans = filteredPlans.filter(p => (p.reimbursed || false) === isReimbursed);
+            }
+
+            const processedPlans = filteredPlans.map(plan => ({
+                ...plan,
+                liveOverallStatus: getLiveOverallStatus(plan)
+            }));
+            
+            renderAtAGlance(allPlans.map(p => ({...p, liveOverallStatus: getLiveOverallStatus(p)})));
+            renderTimeline(allPlans.map(p => ({...p, liveOverallStatus: getLiveOverallStatus(p)})));
+            renderDetailedLog(processedPlans);
+            updateReimbursementActions();
+        }
+
+        function renderDetailedLog(plans) {
+            const tableBody = document.getElementById('plan-table-body');
+            if (!plans || plans.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="9" class="text-center p-8 text-gray-400">沒有符合條件的計畫。</td></tr>`;
+                return;
+            }
+            tableBody.innerHTML = plans.map(plan => `
+                <tr class="hover:bg-gray-700/50">
+                    <td class="p-3">
+                        <input type="checkbox" class="reimbursement-checkbox h-4 w-4 rounded bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500" 
+                               data-id="${plan.id}" data-cost="${plan.totalCost || 0}" 
+                               ${plan.reimbursed ? 'disabled' : ''}
+                               ${selectedForReimbursement[plan.id] ? 'checked' : ''}>
+                    </td>
+                    <td class="p-3"><span class="status-badge reimbursement-${plan.reimbursed ? '已報銷' : '未報銷'}">${plan.reimbursed ? '已報銷' : '未報銷'}</span></td>
+                    <td class="p-3"><span class="status-badge status-${plan.liveOverallStatus}">${plan.liveOverallStatus}</span></td>
+                    <td class="p-3">${plan.engineerName}</td>
+                    <td class="p-3 text-sm">${plan.startDate}<br>${plan.endDate}</td>
+                    <td class="p-3">
+                        <p>${plan.origin} → ${plan.destination}</p>
+                        ${plan.tripPurpose ? `<p class="text-xs text-gray-400 mt-1">目的：${plan.tripPurpose}</p>` : ''}
+                    </td>
+                    <td class="p-3">
+                        <div class="flex items-center gap-4 mb-2">
+                            ${plan.accommodationFee ? `<span class="fee-badge bg-sky-800/70 text-sky-300"><i data-lucide="bed-double" class="w-3 h-3"></i>住宿費: ${plan.accommodationCost.toLocaleString()}</span>` : ''}
+                            ${plan.mealFee ? `<span class="fee-badge bg-green-800/70 text-green-300"><i data-lucide="utensils" class="w-3 h-3"></i>膳雜費</span>` : ''}
+                        </div>
+                        <ul class="space-y-1">
+                            ${(plan.transportation || []).map(t => `
+                                <li class="flex items-center gap-2 text-sm text-gray-300">
+                                    <span>${t.method}</span>
+                                    ${t.method === '自行開車' ? `<span class="text-xs text-gray-400">(${t.mileage} km, 補貼 ${t.cost.toLocaleString()})</span>` : `<span class="text-xs text-gray-400">(金額: ${t.cost.toLocaleString()})</span>`}
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </td>
+                    <td class="p-3 font-semibold text-white">${plan.totalCost ? plan.totalCost.toLocaleString() : 0}</td>
+                    <td class="p-3">
+                        <div class="flex gap-2">
+                            <button class="edit-btn p-2 text-gray-400 hover:text-white" data-id="${plan.id}"><i data-lucide="edit"></i></button>
+                            <button class="delete-btn p-2 text-gray-400 hover:text-red-500" data-id="${plan.id}"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </td>
+                </tr>`).join('');
+
+            document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', (e) => openEditModal(e.currentTarget.dataset.id, allPlans)));
+            document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', (e) => deletePlan(e.currentTarget.dataset.id)));
+            document.querySelectorAll('.reimbursement-checkbox').forEach(cb => cb.addEventListener('change', handleCheckboxChange));
+            lucide.createIcons();
+        }
+        
+        function handleCheckboxChange(e) {
+            const id = e.target.dataset.id;
+            const cost = parseFloat(e.target.dataset.cost);
+            if (e.target.checked) {
+                selectedForReimbursement[id] = cost;
+            } else {
+                delete selectedForReimbursement[id];
+            }
+            updateReimbursementActions();
+        }
+
+        function handleSelectAll(e) {
+            const isChecked = e.target.checked;
+            selectedForReimbursement = {}; // Clear previous selections
+            document.querySelectorAll('.reimbursement-checkbox:not(:disabled)').forEach(cb => {
+                cb.checked = isChecked;
+                if (isChecked) {
+                    const id = cb.dataset.id;
+                    const cost = parseFloat(cb.dataset.cost);
+                    selectedForReimbursement[id] = cost;
+                }
+            });
+            updateReimbursementActions();
+        }
+
+        function updateReimbursementActions() {
+            const count = Object.keys(selectedForReimbursement).length;
+            if (count > 0) {
+                const totalCost = Object.values(selectedForReimbursement).reduce((sum, cost) => sum + cost, 0);
+                reimbursementSummary.textContent = `已勾選 ${count} 筆，總計金額: ${totalCost.toLocaleString()} 元`;
+                reimbursementActions.classList.remove('hidden');
+            } else {
+                reimbursementActions.classList.add('hidden');
+            }
+        }
+        
+        // --- MODAL & TASK HANDLING ---
+        function openAddModal() {
+            planForm.reset();
+            planIdInput.value = '';
+            modalTitle.textContent = '新增出差計畫';
+            transportationContainer.innerHTML = '';
+            addTransportationItem();
+            overallStatusWrapper.classList.add('hidden');
+            toggleAccommodationCost();
+            updateMealAllowanceDisplay();
+            planModal.style.display = 'flex';
+        }
+
+        function openEditModal(id, plans) {
+            const plan = plans.find(p => p.id === id);
+            if (!plan) return;
+
+            planForm.reset();
+            modalTitle.textContent = '編輯出差計畫';
+            planIdInput.value = id;
+            document.getElementById('engineerName').value = plan.engineerName;
+            document.getElementById('startDate').value = plan.startDate;
+            document.getElementById('endDate').value = plan.endDate;
+            document.getElementById('origin').value = plan.origin || '';
+            document.getElementById('destination').value = plan.destination || '';
+            document.getElementById('tripPurpose').value = plan.tripPurpose || '';
+            accommodationFeeCheckbox.checked = plan.accommodationFee || false;
+            document.getElementById('accommodationCost').value = plan.accommodationCost || '';
+            mealFeeCheckbox.checked = plan.mealFee || false;
+            overallStatusSelect.value = plan.overallStatus;
+            
+            transportationContainer.innerHTML = '';
+            if (plan.transportation && plan.transportation.length > 0) {
+                plan.transportation.forEach(t => addTransportationItem(t));
+            } else {
+                addTransportationItem();
+            }
+            
+            toggleAccommodationCost();
+            updateMealAllowanceDisplay();
+            overallStatusWrapper.classList.remove('hidden');
+            planModal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            planModal.style.display = 'none';
+        }
+
+        function addTransportationItem(transport = { method: '自行開車', mileage: '', cost: 0 }) {
+            const item = document.createElement('div');
+            item.className = 'transportation-item flex items-center gap-2';
+            
+            const transportOptions = TRANSPORTATION_OPTIONS.map(o => `<option value="${o}" ${transport.method === o ? 'selected' : ''}>${o}</option>`).join('');
+
+            item.innerHTML = `
+                <select name="transportationMethod" class="w-1/3 bg-gray-700/50 border-gray-600 text-white rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500">${transportOptions}</select>
+                <div class="cost-input-wrapper w-2/3 flex items-center gap-2"></div>
+                <button type="button" class="remove-transport-btn p-2 text-red-500 hover:text-red-400"><i data-lucide="x-circle"></i></button>
+            `;
+            
+            const select = item.querySelector('select');
+            const costWrapper = item.querySelector('.cost-input-wrapper');
+
+            const updateInputType = () => {
+                const currentMileage = (select.value === '自行開車' && transport.mileage) ? transport.mileage : '';
+                const currentCost = (select.value !== '自行開車' && transport.cost) ? transport.cost : '';
+
+                if (select.value === '自行開車') {
+                    costWrapper.innerHTML = `
+                        <input type="number" name="transportationMileage" value="${currentMileage}" placeholder="里程數 (km)" class="w-1/2 bg-gray-600 border-gray-500 text-gray-300 rounded-md p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <span class="w-1/2 text-sm text-gray-400">補貼: ${(currentMileage * MILEAGE_RATE).toLocaleString()} 元</span>`;
+                    costWrapper.querySelector('input').addEventListener('input', (e) => {
+                        const mileage = parseFloat(e.target.value) || 0;
+                        costWrapper.querySelector('span').textContent = `補貼: ${(mileage * MILEAGE_RATE).toLocaleString()} 元`;
+                    });
+                } else {
+                    costWrapper.innerHTML = `<input type="number" name="transportationCost" value="${currentCost}" placeholder="金額 (元)" class="w-full bg-gray-600 border-gray-500 text-gray-300 rounded-md p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">`;
+                }
+            };
+            
+            select.addEventListener('change', updateInputType);
+            transportationContainer.appendChild(item);
+            item.querySelector('.remove-transport-btn').addEventListener('click', () => item.remove());
+            lucide.createIcons();
+            updateInputType();
+        }
+
+        // --- UTILITY & STATUS LOGIC FUNCTIONS ---
+        function populateSelects() {
+            engineerNameSelect.innerHTML = ENGINEERS.map(e => `<option value="${e}">${e}</option>`).join('');
+            overallStatusSelect.innerHTML = OVERALL_STATUS_OPTIONS.map(s => `<option value="${s}">${s}</option>`).join('');
+            engineerFilter.innerHTML = '<option value="all">所有工程師</option>' + ENGINEERS.map(e => `<option value="${e}">${e}</option>`).join('');
+        }
+        
+        function parseDate(dateString) { return new Date(dateString + 'T00:00:00'); }
+
+        function toggleAccommodationCost() { accommodationCostWrapper.classList.toggle('hidden', !accommodationFeeCheckbox.checked); }
+
+        function updateMealAllowanceDisplay() {
+            if (mealFeeCheckbox.checked && startDateInput.value && endDateInput.value) {
+                const days = calculateDays(startDateInput.value, endDateInput.value);
+                if (days > 0) {
+                    const totalAllowance = days * MEAL_ALLOWANCE_PER_DAY;
+                    mealFeeCalculationWrapper.textContent = `${days} 天 x ${MEAL_ALLOWANCE_PER_DAY}元 = ${totalAllowance.toLocaleString()} 元`;
+                    mealFeeCalculationWrapper.classList.remove('hidden'); return;
+                }
+            }
+            mealFeeCalculationWrapper.classList.add('hidden');
+        }
+        
+        function calculateDays(start, end) {
+            const startDate = parseDate(start); const endDate = parseDate(end);
+            if (endDate < startDate) return 0;
+            return Math.ceil(Math.abs(endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        }
+
+        function calculateTotalCost(plan) {
+            let total = (plan.transportation || []).reduce((sum, t) => sum + t.cost, 0);
+            if (plan.accommodationFee) total += plan.accommodationCost;
+            if (plan.mealFee) total += calculateDays(plan.startDate, plan.endDate) * MEAL_ALLOWANCE_PER_DAY;
+            return total;
+        }
+
+        function getLiveOverallStatus(plan) {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const start = parseDate(plan.startDate);
+            if (plan.overallStatus === '計畫中' && today >= start) return '進行中';
+            return plan.overallStatus;
+        }
+
+        function changeMonth(offset) { currentDate.setMonth(currentDate.getMonth() + offset); applyFiltersAndRender(); }
+
+        // --- START THE APP ---
+        setup();
+        signIn();
+        
+        // --- Functions not directly called by setup ---
+        function renderAtAGlance(plans) {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const oneWeekFromNow = new Date(today); oneWeekFromNow.setDate(today.getDate() + 7);
+            const onSite = plans.filter(p => { const start = parseDate(p.startDate), end = parseDate(p.endDate); return start <= today && today <= end && p.liveOverallStatus === '進行中'; });
+            const upcoming = plans.filter(p => { const start = parseDate(p.startDate); return start > today && start <= oneWeekFromNow && p.liveOverallStatus === '計畫中'; });
+            document.getElementById('currentlyOnSite').innerHTML = onSite.length ? onSite.map(p => `<div class="bg-gray-700/50 p-3 rounded-lg"><p class="font-semibold text-white">${p.engineerName}</p><p class="text-sm text-gray-300">${p.origin} → ${p.destination}</p></div>`).join('') : '<p class="text-gray-400">目前無人出差。</p>';
+            document.getElementById('upcomingThisWeek').innerHTML = upcoming.length ? upcoming.map(p => `<div class="bg-gray-700/50 p-3 rounded-lg"><p class="font-semibold text-white">${p.engineerName}</p><p class="text-sm text-gray-300">${p.destination} (${new Date(p.startDate + 'T00:00:00').toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' })})</p></div>`).join('') : '<p class="text-gray-400">未來一週無出差計畫。</p>';
+        }
+        function renderTimeline(plans) {
+            const container = document.getElementById('timeline-container');
+            const year = currentDate.getFullYear(), month = currentDate.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            document.getElementById('current-month-display').textContent = `${year} / ${String(month + 1).padStart(2, '0')}`;
+            let headerHtml = `<div class="timeline-grid sticky top-0 bg-gray-800 z-10 py-2"><div class="font-semibold text-center text-gray-400">工程師</div>${Array.from({ length: daysInMonth }, (_, i) => `<div class="text-center text-sm text-gray-500">${i + 1}</div>`).join('')}</div>`;
+            let bodyHtml = ENGINEERS.map(engineer => {
+                let engineerRow = `<div class="timeline-grid"><div class="font-medium text-sm p-2 border-r border-gray-700">${engineer}</div>`;
+                const engineerPlans = plans.filter(p => p.engineerName === engineer);
+                engineerPlans.forEach(plan => {
+                    const startDate = parseDate(plan.startDate), endDate = parseDate(plan.endDate);
+                    if (startDate.getFullYear() === year && startDate.getMonth() === month || endDate.getFullYear() === year && endDate.getMonth() === month || (startDate < new Date(year, month, 1) && endDate > new Date(year, month + 1, 0))) {
+                        const startDay = (startDate.getMonth() === month && startDate.getFullYear() === year) ? startDate.getDate() : 1;
+                        const endDay = (endDate.getMonth() === month && endDate.getFullYear() === year) ? endDate.getDate() : daysInMonth;
+                        const colorClass = STATUS_COLORS[plan.liveOverallStatus] || 'bg-gray-500';
+                        engineerRow += `<div class="timeline-bar h-6 ${colorClass} rounded my-1 flex items-center justify-center text-white text-xs overflow-hidden" style="--start-day: ${startDay + 1}; --end-day: ${endDay + 2};" title="${plan.destination}"><span class="truncate px-1">${plan.destination}</span></div>`;
+                    }
+                });
+                return engineerRow + '</div>';
+            }).join('');
+            container.innerHTML = headerHtml + bodyHtml;
+        }
+    </script>
+</body>
+</html>
