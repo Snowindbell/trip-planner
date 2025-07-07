@@ -249,7 +249,7 @@
             appId: "1:601697285972:web:77cc7387e8e9ef32663ac1",
             measurementId: "G-QHN14EQGZN"
         };
-        const appId = typeof __app_id !== 'undefined' ? __app_id : '1:601697285972:web:77cc7387e8e9ef32663ac1';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-engineer-planner';
         
         // --- PERMISSION CONTROL ---
         // !!! IMPORTANT: Replace with your actual Firebase User ID to get admin access.
@@ -328,11 +328,18 @@
         // --- AUTHENTICATION & PERMISSIONS ---
         onAuthStateChanged(auth, user => {
             if (user) {
+                // User is signed in (either with Google or anonymously).
                 currentUserId = user.uid;
                 userIdSpan.textContent = user.uid;
                 updateAuthUI(user);
                 updateAdminView(user.uid);
                 listenForPlans();
+            } else {
+                // No user is signed in. This case should ideally not happen with the new logic.
+                // But as a fallback, we sign them in anonymously.
+                signInAnonymously(auth).catch(error => {
+                    console.error("Fallback anonymous sign-in failed:", error);
+                });
             }
         });
 
@@ -368,13 +375,9 @@
         
         async function signOutUser() {
             try {
-                const wasAdmin = ADMIN_UIDS.includes(auth.currentUser.uid);
                 await signOut(auth);
-                // After signing out, sign in anonymously to keep the data visible
-                await signInAnonymously(auth);
-                if (wasAdmin) {
-                     document.body.classList.remove('admin-view');
-                }
+                // The onAuthStateChanged listener will automatically handle signing in anonymously.
+                document.body.classList.remove('admin-view');
             } catch (error) {
                 console.error("Sign out failed:", error);
             }
@@ -746,7 +749,6 @@
 
         // --- START THE APP ---
         setup();
-        signInAnonymously(auth); // Sign in anonymously by default
         
         function renderAtAGlance(plans) {
             const today = new Date(); today.setHours(0, 0, 0, 0);
