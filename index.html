@@ -64,8 +64,15 @@
                 <h1 class="text-3xl font-bold text-white">工程團隊出差與施工計畫看板</h1>
                 <p class="text-gray-400 mt-1">即時同步所有工程師的出差計畫與進度。</p>
             </div>
-            <div id="auth-container" class="mt-4 md:mt-0 text-right">
-                <!-- Auth status will be injected here -->
+            <div class="flex items-center gap-4 mt-4 md:mt-0">
+                <div id="auth-container" class="text-right">
+                    <!-- Auth status will be injected here -->
+                </div>
+                <!-- This button is only visible to admins via the .admin-view class on the body -->
+                <button id="addPlanBtn" class="admin-only flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105">
+                    <i data-lucide="plus-circle"></i>
+                    <span>新增出差計畫</span>
+                </button>
             </div>
         </div>
         <p class="text-xs text-gray-500 mb-8">您的使用者ID: <span id="userId" class="font-mono"></span></p>
@@ -247,7 +254,7 @@
         // --- PERMISSION CONTROL ---
         // !!! IMPORTANT: Replace with your actual Firebase User ID to get admin access.
         // 您可以在登入後，於左上角的 "您的使用者ID:" 找到這個值。
-        const ADMIN_UIDS = ["YOUR_ADMIN_USER_ID_HERE"]; 
+        const ADMIN_UIDS = ["ak9CSEc9njgV0HdqWEJNU3cq0MA3"]; 
 
         const ENGINEERS = ["Ryan", "Jess", "Jesper", "Vito", "Eric", "其他工程師"];
         const TRANSPORTATION_OPTIONS = ["自行開車", "捷運", "高鐵", "計程車", "飛機", "船", "其他大眾工具"];
@@ -361,7 +368,13 @@
         
         async function signOutUser() {
             try {
+                const wasAdmin = ADMIN_UIDS.includes(auth.currentUser.uid);
                 await signOut(auth);
+                // After signing out, sign in anonymously to keep the data visible
+                await signInAnonymously(auth);
+                if (wasAdmin) {
+                     document.body.classList.remove('admin-view');
+                }
             } catch (error) {
                 console.error("Sign out failed:", error);
             }
